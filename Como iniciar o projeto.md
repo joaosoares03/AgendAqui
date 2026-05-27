@@ -20,8 +20,8 @@
 
 **Como acessar o H2 Console**
 
-- Com o Backend executando no terminal, acesse o site http://localhost:8080/h2-console ;
+- Com o Backend executando no terminal, acesse o site http://localhost:8080/h2- ;
 
 - Em "JDBC URL", cole na caixa o seguinte caminho: jdbc:h2:file:./data/agendaqui ;
 
-- Por último, Clique em Connect;
+- Por último, Clique em Connect;console

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert,
   ActivityIndicator, FlatList, SafeAreaView, Image,
-  TextInput, Modal, ScrollView,
+  TextInput, Modal, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import {
 } from '@expo-google-fonts/poppins';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTema } from '../../contexts/ThemeContext';
+import Popup from '../../components/Popup';
 
 type FiltroTempo  = 'todos' | 'hoje' | 'semana' | 'mes' | 'ano' | 'passados' | 'futuros';
 type FiltroStatus = 'todos' | 'agendado' | 'confirmado' | 'concluido' | 'cancelado';
@@ -24,9 +25,19 @@ const statusConfig: Record<string, { label: string; cor: string; bg: string }> =
   cancelado:  { label: 'Cancelado',  cor: '#991B1B', bg: '#FEE2E2' },
 };
 
+interface PopupState {
+  visivel: boolean;
+  tipo: 'sucesso' | 'erro' | 'aviso' | 'confirmacao' | 'info';
+  titulo: string;
+  mensagem: string;
+  onConfirmar?: () => void;
+}
+
 export default function GestaoAgendamentos() {
   const router = useRouter();
   const { tema, alternarTema, cores } = useTema();
+  const { width: screenWidth } = useWindowDimensions();
+  const isWide = screenWidth > 700;
 
   const [todos, setTodos] = useState<Agendamento[]>([]);
   const [filtrados, setFiltrados] = useState<Agendamento[]>([]);
@@ -36,6 +47,9 @@ export default function GestaoAgendamentos() {
   const [filtroTempo, setFiltroTempo] = useState<FiltroTempo>('todos');
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
   const [modalAgendamento, setModalAgendamento] = useState<Agendamento | null>(null);
+  const [popup, setPopup] = useState<PopupState>({
+    visivel: false, tipo: 'info', titulo: '', mensagem: '',
+  });
 
   const [fontsLoaded] = useFonts({
     Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold,
@@ -43,6 +57,15 @@ export default function GestaoAgendamentos() {
 
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
+
+  const fecharPopup = () => setPopup(p => ({ ...p, visivel: false }));
+
+  const mostrarPopup = (
+    tipo: PopupState['tipo'],
+    titulo: string,
+    mensagem: string,
+    onConfirmar?: () => void,
+  ) => setPopup({ visivel: true, tipo, titulo, mensagem, onConfirmar });
 
   const carregar = useCallback(async () => {
     try {
@@ -54,7 +77,7 @@ export default function GestaoAgendamentos() {
       );
       setTodos(dados);
     } catch {
-      Alert.alert('Erro', 'Não foi possível carregar os agendamentos');
+      mostrarPopup('erro', 'Erro ao carregar', 'Não foi possível carregar os agendamentos. Tente novamente.');
     } finally {
       setCarregando(false);
     }
@@ -108,39 +131,60 @@ export default function GestaoAgendamentos() {
     setFiltrados(resultado);
   }, [todos, filtroTempo, filtroStatus, busca]);
 
-  const atualizarStatus = async (ag: Agendamento, novoStatus: string) => {
+  const confirmarAtualizarStatus = (ag: Agendamento, novoStatus: string) => {
+    const labels: Record<string, string> = {
+      confirmado: 'confirmar',
+      concluido:  'marcar como concluído',
+      cancelado:  'cancelar',
+    };
+    mostrarPopup(
+      'confirmacao',
+      'Confirmar ação',
+      `Deseja realmente ${labels[novoStatus] ?? 'alterar'} o agendamento de ${ag.cliente?.nome}?`,
+      () => executarAtualizarStatus(ag, novoStatus),
+    );
+  };
+
+  const executarAtualizarStatus = async (ag: Agendamento, novoStatus: string) => {
+    fecharPopup();
+    setModalAgendamento(null);
     try {
       setAtualizandoId(ag.id);
       await api.atualizarStatusAgendamento(ag.id, novoStatus);
       await carregar();
-      setModalAgendamento(null);
-      if (typeof window !== 'undefined') {
-        window.alert(`✅ Status atualizado para: ${novoStatus}`);
-      } else {
-        Alert.alert('✅ Atualizado', `Status alterado para: ${novoStatus}`);
-      }
+
+      const labels: Record<string, string> = {
+        confirmado: 'Agendamento confirmado!',
+        concluido:  'Serviço concluído!',
+        cancelado:  'Agendamento cancelado',
+      };
+      mostrarPopup(
+        novoStatus === 'cancelado' ? 'aviso' : 'sucesso',
+        labels[novoStatus] ?? 'Status atualizado',
+        `O status do agendamento #${ag.id} foi atualizado com sucesso.`,
+      );
     } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o status');
+      mostrarPopup('erro', 'Erro ao atualizar', 'Não foi possível atualizar o status. Tente novamente.');
     } finally {
       setAtualizandoId(null);
     }
   };
 
   const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      if (window.confirm('Deseja realmente sair?')) {
-        localStorage.removeItem('@usuario_data');
+    mostrarPopup(
+      'confirmacao',
+      'Sair do sistema',
+      'Deseja realmente sair? Você precisará fazer login novamente.',
+      () => {
+        fecharPopup();
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('@usuario_data');
+        } else {
+          AsyncStorage.removeItem('@usuario_data');
+        }
         router.replace('/login');
-      }
-    } else {
-      Alert.alert('Sair', 'Deseja realmente sair?', [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sair', style: 'destructive',
-          onPress: () => { AsyncStorage.removeItem('@usuario_data'); router.replace('/login'); },
-        },
-      ]);
-    }
+      },
+    );
   };
 
   const formatarData = (d: string) =>
@@ -187,9 +231,9 @@ export default function GestaoAgendamentos() {
         </TouchableOpacity>
       </View>
 
-      {/* Título + contador */}
+      {/* Título */}
       <View style={estilos.cabecalho}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={[estilos.titulo, { color: cores.textoPrimario }]}>Gestão de Agendamentos</Text>
           <Text style={[estilos.subtitulo, { color: cores.textoSecundario }]}>
             {filtrados.length} resultado{filtrados.length !== 1 ? 's' : ''} encontrado{filtrados.length !== 1 ? 's' : ''}
@@ -221,8 +265,8 @@ export default function GestaoAgendamentos() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={{ maxHeight: 44 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }}
+        style={{ maxHeight: 44, flexShrink: 0 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }}
       >
         {([
           { key: 'todos',    label: 'Todos'       },
@@ -241,8 +285,8 @@ export default function GestaoAgendamentos() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={{ maxHeight: 44, marginBottom: 4 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }}
+        style={{ maxHeight: 44, flexShrink: 0, marginBottom: 6 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }}
       >
         {([
           { key: 'todos',      label: 'Todos status' },
@@ -273,8 +317,14 @@ export default function GestaoAgendamentos() {
         <FlatList
           data={filtrados}
           keyExtractor={item => item.id.toString()}
-          contentContainerStyle={estilos.lista}
+          contentContainerStyle={[
+            estilos.lista,
+            isWide && { paddingHorizontal: 32 },
+          ]}
           showsVerticalScrollIndicator={false}
+          numColumns={isWide ? 2 : 1}
+          key={isWide ? 'wide' : 'narrow'}
+          columnWrapperStyle={isWide ? { gap: 12 } : undefined}
           renderItem={({ item }) => {
             const cfg = statusConfig[item.status?.toLowerCase()] ?? { label: item.status, cor: '#555', bg: '#F1F5F9' };
             const passado = isPast(item.dataAgendamento);
@@ -284,6 +334,7 @@ export default function GestaoAgendamentos() {
                   estilos.card,
                   { backgroundColor: cores.fundoCard, borderColor: cores.borda },
                   passado && { opacity: 0.75 },
+                  isWide && { flex: 1 },
                 ]}
                 onPress={() => setModalAgendamento(item)}
                 activeOpacity={0.85}
@@ -352,17 +403,13 @@ export default function GestaoAgendamentos() {
           <Ionicons name="list" size={22} color={cores.iconeAtivo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeAtivo, fontFamily: 'Poppins_600SemiBold' }]}>Gestão</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={handleLogout}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
+        <TouchableOpacity style={estilos.tabItem} onPress={handleLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="log-out-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Sair</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Modal */}
+      {/* Modal de detalhe */}
       <Modal
         visible={!!modalAgendamento}
         transparent
@@ -373,7 +420,11 @@ export default function GestaoAgendamentos() {
           {modalAgendamento && (() => {
             const cfg = statusConfig[modalAgendamento.status?.toLowerCase()] ?? { label: modalAgendamento.status, cor: '#555', bg: '#F1F5F9' };
             return (
-              <View style={[estilos.modalContainer, { backgroundColor: cores.fundoCard, borderColor: cores.borda }]}>
+              <View style={[
+                estilos.modalContainer,
+                { backgroundColor: cores.fundoCard, borderColor: cores.borda },
+                isWide && { maxWidth: 540, alignSelf: 'center', borderRadius: 20, marginHorizontal: 'auto' },
+              ]}>
                 <View style={[estilos.modalAlca, { backgroundColor: cores.borda }]} />
 
                 <View style={estilos.modalHeaderRow}>
@@ -424,7 +475,7 @@ export default function GestaoAgendamentos() {
                         (atualizandoId === modalAgendamento.id ||
                           modalAgendamento.status?.toLowerCase() === acao.status) && { opacity: 0.45 },
                       ]}
-                      onPress={() => atualizarStatus(modalAgendamento, acao.status)}
+                      onPress={() => confirmarAtualizarStatus(modalAgendamento, acao.status)}
                       disabled={
                         atualizandoId === modalAgendamento.id ||
                         modalAgendamento.status?.toLowerCase() === acao.status
@@ -451,6 +502,23 @@ export default function GestaoAgendamentos() {
           })()}
         </View>
       </Modal>
+
+      {/* Popup global */}
+      <Popup
+        visivel={popup.visivel}
+        tipo={popup.tipo}
+        titulo={popup.titulo}
+        mensagem={popup.mensagem}
+        botoes={
+          popup.tipo === 'confirmacao'
+            ? [
+                { label: 'Cancelar',  onPress: fecharPopup,           tipo: 'secundario' },
+                { label: 'Confirmar', onPress: popup.onConfirmar ?? fecharPopup, tipo: 'primario'   },
+              ]
+            : [{ label: 'OK', onPress: fecharPopup }]
+        }
+        onFechar={fecharPopup}
+      />
     </SafeAreaView>
   );
 }
@@ -472,13 +540,13 @@ const estilos = StyleSheet.create({
   subtitulo: { fontFamily: 'Poppins_400Regular', fontSize: 12, marginTop: 2 },
   botaoAtualizar: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   buscaContainer: {
-    flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 8,
     borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, height: 46, gap: 8,
   },
   buscaInput: { flex: 1, fontFamily: 'Poppins_400Regular', fontSize: 14, height: '100%' },
   chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   chipText: { fontFamily: 'Poppins_500Medium', fontSize: 12 },
-  lista: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
+  lista: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
   card: { borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1 },
   cardTopo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
   cardDataContainer: { flex: 1 },
@@ -510,13 +578,10 @@ const estilos = StyleSheet.create({
   modalFundo: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   modalContainer: {
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 36, borderTopWidth: 1,
+    padding: 24, paddingBottom: 36, borderTopWidth: 1, width: '100%',
   },
   modalAlca: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  modalHeaderRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 16,
-  },
+  modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitulo: { fontFamily: 'Poppins_700Bold', fontSize: 18 },
   modalInfoBox: { borderRadius: 12, borderWidth: 1, marginBottom: 20, overflow: 'hidden' },
   modalLinha: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 14 },

@@ -5,15 +5,13 @@ import {
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  ActivityIndicator, Animated, Dimensions, ScrollView,
-  StyleSheet, Text, TouchableOpacity, View, RefreshControl,
+  ActivityIndicator, Animated, ScrollView, StyleSheet,
+  Text, TouchableOpacity, View, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../hooks/useAuth';
 import { useTema } from '../../contexts/ThemeContext';
 import { Agendamento, api } from '../../services/api';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type FiltroPeriodo = 'dia' | 'semana' | 'mes' | 'ano' | 'tudo';
 
@@ -59,7 +57,9 @@ function AnimatedBar({ height, delay, color }: { height: number; delay: number; 
   }, [height]);
 
   return (
-    <Animated.View style={{ width: 28, borderRadius: 8, backgroundColor: color, height: animHeight, minHeight: 4 }} />
+    <Animated.View style={{
+      width: 28, borderRadius: 8, backgroundColor: color, height: animHeight, minHeight: 4,
+    }} />
   );
 }
 
@@ -67,6 +67,7 @@ export default function ResumoFinanceiro() {
   const router = useRouter();
   const { usuario, getUsuarioId } = useAuth();
   const { tema, cores } = useTema();
+  const { width: screenWidth } = useWindowDimensions(); // ← reativo ao resize
 
   const [dados, setDados] = useState<DadosResumo | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -78,6 +79,13 @@ export default function ResumoFinanceiro() {
   const slideAnim = useRef(new Animated.Value(30)).current;
 
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
+
+  // Calcula largura dos cards de stat de forma reativa
+  const padding     = 32; // 16 de cada lado
+  const gap         = 10;
+  const isWide      = screenWidth > 600;
+  const numCols     = isWide ? 4 : 2;
+  const statCardW   = (screenWidth - padding - gap * (numCols - 1)) / numCols;
 
   const getMonthNumber = (monthName: string): number => {
     const months: Record<string, number> = {
@@ -148,7 +156,6 @@ export default function ResumoFinanceiro() {
       const ticketMedio             = totalServicosConcluidos > 0 ? receitaTotal / totalServicosConcluidos : 0;
       const taxaConclusao           = totalAgendamentos > 0 ? (totalServicosConcluidos / totalAgendamentos) * 100 : 0;
 
-      // Gráfico usa TODOS os concluídos sem filtro de período
       const todosConcluidos = agendamentos.filter(ag =>
         ['concluido', 'finalizado', 'concluído'].includes(ag.status?.toLowerCase())
       );
@@ -286,6 +293,29 @@ export default function ResumoFinanceiro() {
     ? Math.max(...dados.servicosPorMes.map(m => m.receita), 1)
     : 1;
 
+  const statsData = [
+    {
+      icone: 'calendar'         as const, cor: colors.cyan,  fundo: colors.cyanSoft,
+      valor: dados?.totalAgendamentos || 0,
+      label: 'Agendamentos',    tipo: 'numero',
+    },
+    {
+      icone: 'checkmark-circle' as const, cor: colors.green, fundo: colors.greenSoft,
+      valor: dados?.totalServicosConcluidos || 0,
+      label: 'Concluídos',      tipo: 'numero',
+    },
+    {
+      icone: 'pie-chart'        as const, cor: colors.amber, fundo: colors.amberSoft,
+      valor: dados?.taxaConclusao || 0,
+      label: 'Tx. Conclusão',   tipo: 'porcentagem',
+    },
+    {
+      icone: 'pricetag'         as const, cor: colors.rose,  fundo: colors.roseSoft,
+      valor: dados?.ticketMedio || 0,
+      label: 'Ticket Médio',    tipo: 'moeda',
+    },
+  ];
+
   return (
     <View style={[estilos.container, { backgroundColor: colors.bg }]}>
 
@@ -315,12 +345,15 @@ export default function ResumoFinanceiro() {
         </TouchableOpacity>
       </View>
 
-      {/* Chips de período — gap substituído por marginRight para evitar bug */}
+      {/* Chips de período */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={{ maxHeight: 52 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center' }}
+        style={{ maxHeight: 52, flexShrink: 0 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16, paddingVertical: 8,
+          flexDirection: 'row', alignItems: 'center',
+        }}
       >
         {([
           { key: 'dia',    label: 'Hoje'   },
@@ -332,11 +365,8 @@ export default function ResumoFinanceiro() {
           <TouchableOpacity
             key={f.key}
             style={{
-              paddingHorizontal: 16,
-              paddingVertical: 7,
-              borderRadius: 20,
-              borderWidth: 1,
-              marginRight: 8,
+              paddingHorizontal: 18, paddingVertical: 8,
+              borderRadius: 20, borderWidth: 1, marginRight: 8,
               borderColor:     filtroPeriodo === f.key ? cores.botaoPrimario : cores.borda,
               backgroundColor: filtroPeriodo === f.key ? cores.botaoPrimario : 'transparent',
             }}
@@ -344,8 +374,7 @@ export default function ResumoFinanceiro() {
             activeOpacity={0.7}
           >
             <Text style={{
-              fontFamily: 'Poppins_600SemiBold',
-              fontSize: 13,
+              fontFamily: 'Poppins_600SemiBold', fontSize: 13,
               color: filtroPeriodo === f.key ? '#FFF' : cores.textoSecundario,
             }}>
               {f.label}
@@ -356,7 +385,7 @@ export default function ResumoFinanceiro() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={estilos.scrollContent}
+        contentContainerStyle={[estilos.scrollContent, { paddingHorizontal: 16 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -408,59 +437,44 @@ export default function ResumoFinanceiro() {
             </View>
           </LinearGradient>
 
-          {/* Stats Grid */}
-          <View style={estilos.statsGrid}>
-            <View style={[estilos.statCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <View style={[estilos.statIcon, { backgroundColor: colors.cyanSoft }]}>
-                <Ionicons name="calendar" size={20} color={colors.cyan} />
+          {/* Stats Grid — largura calculada de forma reativa */}
+          <View style={[estilos.statsGrid, { gap: 10 }]}>
+            {statsData.map((stat, i) => (
+              <View
+                key={i}
+                style={[
+                  estilos.statCard,
+                  {
+                    backgroundColor: colors.cardBg,
+                    borderColor: colors.border,
+                    width: statCardW,
+                  },
+                ]}
+              >
+                <View style={[estilos.statIcon, { backgroundColor: stat.fundo }]}>
+                  <Ionicons name={stat.icone} size={20} color={stat.cor} />
+                </View>
+                {stat.tipo === 'porcentagem' ? (
+                  <AnimatedNumber
+                    value={stat.valor}
+                    suffix="%"
+                    style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold' }]}
+                  />
+                ) : stat.tipo === 'moeda' ? (
+                  <Text style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 20 }]}>
+                    R$ {stat.valor.toFixed(0)}
+                  </Text>
+                ) : (
+                  <AnimatedNumber
+                    value={stat.valor}
+                    style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold' }]}
+                  />
+                )}
+                <Text style={[estilos.statLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
+                  {stat.label}
+                </Text>
               </View>
-              <AnimatedNumber
-                value={dados?.totalAgendamentos || 0}
-                style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold' }]}
-              />
-              <Text style={[estilos.statLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
-                Agendamentos
-              </Text>
-            </View>
-
-            <View style={[estilos.statCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <View style={[estilos.statIcon, { backgroundColor: colors.greenSoft }]}>
-                <Ionicons name="checkmark-circle" size={20} color={colors.green} />
-              </View>
-              <AnimatedNumber
-                value={dados?.totalServicosConcluidos || 0}
-                style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold' }]}
-              />
-              <Text style={[estilos.statLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
-                Concluídos
-              </Text>
-            </View>
-
-            <View style={[estilos.statCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <View style={[estilos.statIcon, { backgroundColor: colors.amberSoft }]}>
-                <Ionicons name="pie-chart" size={20} color={colors.amber} />
-              </View>
-              <AnimatedNumber
-                value={dados?.taxaConclusao || 0}
-                suffix="%"
-                style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold' }]}
-              />
-              <Text style={[estilos.statLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
-                Tx. Conclusão
-              </Text>
-            </View>
-
-            <View style={[estilos.statCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <View style={[estilos.statIcon, { backgroundColor: colors.roseSoft }]}>
-                <Ionicons name="pricetag" size={20} color={colors.rose} />
-              </View>
-              <Text style={[estilos.statValue, { color: colors.text, fontFamily: 'Poppins_700Bold', fontSize: 18 }]}>
-                R$ {(dados?.ticketMedio || 0).toFixed(0)}
-              </Text>
-              <Text style={[estilos.statLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
-                Ticket Médio
-              </Text>
-            </View>
+            ))}
           </View>
 
           {/* Serviço Mais Popular */}
@@ -506,25 +520,27 @@ export default function ResumoFinanceiro() {
 
             {dados?.servicosPorMes && dados.servicosPorMes.length > 0 ? (
               <>
-                <View style={estilos.chartArea}>
-                  {dados.servicosPorMes.map((mes, index) => {
-                    const barHeight = (mes.receita / maxReceita) * 120;
-                    const mesLabel  = mes.mes.split(' de ')[0].substring(0, 3);
-                    return (
-                      <View key={index} style={estilos.chartBarWrapper}>
-                        <Text style={[estilos.chartBarValue, { color: colors.textSec, fontFamily: 'Poppins_600SemiBold' }]}>
-                          {mes.total}
-                        </Text>
-                        <View style={[estilos.chartBarBg, { backgroundColor: colors.progressBg }]}>
-                          <AnimatedBar height={Math.max(barHeight, 8)} delay={index * 100} color={colors.chartBar} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={[estilos.chartArea, { minWidth: dados.servicosPorMes.length * 60 }]}>
+                    {dados.servicosPorMes.map((mes, index) => {
+                      const barHeight = (mes.receita / maxReceita) * 120;
+                      const mesLabel  = mes.mes.split(' de ')[0].substring(0, 3);
+                      return (
+                        <View key={index} style={estilos.chartBarWrapper}>
+                          <Text style={[estilos.chartBarValue, { color: colors.textSec, fontFamily: 'Poppins_600SemiBold' }]}>
+                            {mes.total}
+                          </Text>
+                          <View style={[estilos.chartBarBg, { backgroundColor: colors.progressBg }]}>
+                            <AnimatedBar height={Math.max(barHeight, 8)} delay={index * 100} color={colors.chartBar} />
+                          </View>
+                          <Text style={[estilos.chartBarLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
+                            {mesLabel}
+                          </Text>
                         </View>
-                        <Text style={[estilos.chartBarLabel, { color: colors.textSec, fontFamily: 'Poppins_400Regular' }]}>
-                          {mesLabel}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
 
                 <View style={[estilos.divider, { backgroundColor: colors.border }]} />
 
@@ -540,7 +556,7 @@ export default function ResumoFinanceiro() {
                   >
                     <View style={estilos.monthLeft}>
                       <View style={[estilos.monthDot, { backgroundColor: colors.chartBar }]} />
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <Text style={[estilos.monthName, { color: colors.text, fontFamily: 'Poppins_600SemiBold' }]}>
                           {mes.mes}
                         </Text>
@@ -610,15 +626,16 @@ const estilos = StyleSheet.create({
   retryButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12, marginTop: 8 },
   retryText: { color: '#FFF', fontSize: 15 },
   header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-    paddingTop: 52, paddingBottom: 14, borderBottomWidth: 1, gap: 12,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: 52, paddingBottom: 14,
+    borderBottomWidth: 1, gap: 12,
   },
   backButton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1 },
   headerTitle: { fontSize: 18 },
   headerSub: { fontSize: 12, marginTop: -2 },
   refreshBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  scrollContent: { padding: 16, paddingBottom: 40 },
+  scrollContent: { paddingTop: 16, paddingBottom: 40 },
   heroCard: { borderRadius: 20, padding: 24, marginBottom: 16 },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   heroIconBg: {
@@ -641,8 +658,9 @@ const estilos = StyleSheet.create({
   heroFooterDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
   heroFooterLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginBottom: 2 },
   heroFooterValue: { color: '#FFF', fontSize: 16 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  statCard: { width: (SCREEN_WIDTH - 42) / 2, borderRadius: 16, padding: 16, borderWidth: 1, gap: 6 },
+  // Grid usa flexWrap + gap, e cada card tem width calculada dinamicamente via useWindowDimensions
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 },
+  statCard: { borderRadius: 16, padding: 16, borderWidth: 1, gap: 6, marginBottom: 10 },
   statIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   statValue: { fontSize: 22 },
   statLabel: { fontSize: 12 },
@@ -662,18 +680,18 @@ const estilos = StyleSheet.create({
   chartTitle: { fontSize: 16, marginBottom: 2 },
   chartSubtitle: { fontSize: 12 },
   chartIconBg: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  chartArea: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', height: 160, paddingBottom: 4 },
-  chartBarWrapper: { alignItems: 'center', gap: 6, flex: 1 },
+  chartArea: { flexDirection: 'row', alignItems: 'flex-end', height: 160, paddingBottom: 4, paddingHorizontal: 8 },
+  chartBarWrapper: { alignItems: 'center', gap: 6, marginHorizontal: 6, width: 40 },
   chartBarBg: { width: 28, height: 120, borderRadius: 8, justifyContent: 'flex-end', overflow: 'hidden' },
   chartBarValue: { fontSize: 11 },
   chartBarLabel: { fontSize: 11, textTransform: 'capitalize' },
   divider: { height: 1, marginVertical: 16 },
   monthItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
-  monthLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  monthDot: { width: 8, height: 8, borderRadius: 4 },
+  monthLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 12 },
+  monthDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   monthName: { fontSize: 14 },
   monthCount: { fontSize: 12, marginTop: 1 },
-  monthRevenue: { fontSize: 15 },
+  monthRevenue: { fontSize: 15, flexShrink: 0 },
   emptyState: { alignItems: 'center', paddingVertical: 32, gap: 8 },
   emptyIcon: { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   emptyTitle: { fontSize: 16 },

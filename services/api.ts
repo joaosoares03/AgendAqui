@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://192.168.0.9:8080/api';
+const API_BASE_URL = 'http://192.168.68.79:8080/api';
 
 export interface Agendamento {
   id: number;
