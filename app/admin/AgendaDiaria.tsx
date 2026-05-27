@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, Alert, SafeAreaView, Image,
+  ActivityIndicator, RefreshControl, SafeAreaView, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -11,7 +11,8 @@ import {
 } from '@expo-google-fonts/poppins';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTema } from '../../contexts/ThemeContext';
-
+import Popup from '../../components/Popup';
+ 
 interface AgendamentoBackend {
   id: number;
   servico: { nome: string };
@@ -21,64 +22,87 @@ interface AgendamentoBackend {
   horario: string;
   status: string;
 }
-
+ 
+interface PopupState {
+  visivel: boolean;
+  tipo: 'sucesso' | 'erro' | 'aviso' | 'confirmacao' | 'info';
+  titulo: string;
+  mensagem: string;
+  onConfirmar?: () => void;
+}
+ 
 export default function AgendaDiaria() {
   const router = useRouter();
   const { tema, alternarTema, cores } = useTema();
   const [agendamentos, setAgendamentos] = useState<AgendamentoBackend[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [dataAtual, setDataAtual] = useState('');
-
+ 
+  const [popup, setPopup] = useState<PopupState>({
+    visivel: false, tipo: 'info', titulo: '', mensagem: '',
+  });
+ 
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
-
+ 
+  const fecharPopup = () => setPopup(p => ({ ...p, visivel: false }));
+ 
+  const mostrarPopup = (
+    tipo: PopupState['tipo'],
+    titulo: string,
+    mensagem: string,
+    onConfirmar?: () => void,
+  ) => setPopup({ visivel: true, tipo, titulo, mensagem, onConfirmar });
+ 
   const obterDataAtual = () => {
     const hoje = new Date();
     const offset = hoje.getTimezoneOffset();
     return new Date(hoje.getTime() - offset * 60000).toISOString().split('T')[0];
   };
-
+ 
   useEffect(() => { setDataAtual(obterDataAtual()); }, []);
-
+ 
   const carregarAgendamentos = useCallback(async () => {
     try {
       setCarregando(true);
       const data = dataAtual || obterDataAtual();
       const dados = await api.getAgendamentosPorData(data);
       setAgendamentos(dados);
-    } catch (error) {
-      Alert.alert('Erro', 'Não foi possível carregar os agendamentos do dia');
+    } catch {
+      mostrarPopup('erro', 'Erro ao carregar', 'Não foi possível carregar os agendamentos do dia. Verifique sua conexão e tente novamente.');
     } finally {
       setCarregando(false);
     }
   }, [dataAtual]);
-
+ 
   useEffect(() => { if (dataAtual) carregarAgendamentos(); }, [dataAtual]);
-
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      if (window.confirm('Deseja realmente sair?')) { localStorage.removeItem('@usuario_data'); router.replace('/login'); }
-    } else {
-      Alert.alert('Sair', 'Deseja realmente sair?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive', onPress: () => { AsyncStorage.removeItem('@usuario_data'); router.replace('/login'); } },
-      ]);
-    }
+ 
+  const confirmarLogout = () => {
+    mostrarPopup(
+      'confirmacao',
+      'Sair da conta',
+      'Deseja realmente sair?',
+      async () => {
+        fecharPopup();
+        await AsyncStorage.removeItem('@usuario_data');
+        router.replace('/login');
+      },
+    );
   };
-
+ 
   const statusConfig: Record<string, { label: string; cor: string; bg: string }> = {
-    agendado:  { label: 'Agendado',  cor: '#166534', bg: '#DCFCE7' },
-    confirmado:{ label: 'Confirmado',cor: '#1E40AF', bg: '#DBEAFE' },
-    concluido: { label: 'Concluído', cor: '#6B21A8', bg: '#F3E8FF' },
-    cancelado: { label: 'Cancelado', cor: '#991B1B', bg: '#FEE2E2' },
+    agendado:   { label: 'Agendado',   cor: '#166534', bg: '#DCFCE7' },
+    confirmado: { label: 'Confirmado', cor: '#1E40AF', bg: '#DBEAFE' },
+    concluido:  { label: 'Concluído',  cor: '#6B21A8', bg: '#F3E8FF' },
+    cancelado:  { label: 'Cancelado',  cor: '#991B1B', bg: '#FEE2E2' },
   };
-
+ 
   const formatarDataTitulo = (d: string) => {
     const data = new Date(d + 'T12:00:00');
     return data.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   };
-
+ 
   if (!fontsLoaded) return null;
-
+ 
   return (
     <SafeAreaView style={[estilos.container, { backgroundColor: cores.fundo }]}>
       {/* Header */}
@@ -91,7 +115,7 @@ export default function AgendaDiaria() {
           <Ionicons name={tema === 'escuro' ? 'sunny-outline' : 'moon-outline'} size={20} color={cores.textoPrimario} />
         </TouchableOpacity>
       </View>
-
+ 
       {/* Título */}
       <View style={estilos.cabecalho}>
         <Text style={[estilos.titulo, { color: cores.textoPrimario }]}>Agenda do Dia</Text>
@@ -99,7 +123,7 @@ export default function AgendaDiaria() {
           {dataAtual ? formatarDataTitulo(dataAtual) : 'Carregando...'}
         </Text>
       </View>
-
+ 
       {carregando ? (
         <View style={estilos.centralizado}>
           <ActivityIndicator size="large" color={cores.botaoPrimario} />
@@ -109,6 +133,13 @@ export default function AgendaDiaria() {
         <View style={estilos.centralizado}>
           <Ionicons name="calendar-outline" size={64} color={cores.textoTerceiro} />
           <Text style={[estilos.textoVazio, { color: cores.textoTerceiro }]}>Nenhum agendamento para hoje</Text>
+          <TouchableOpacity
+            style={[estilos.botaoRecarregar, { borderColor: cores.botaoPrimario }]}
+            onPress={carregarAgendamentos}
+          >
+            <Ionicons name="refresh-outline" size={16} color={cores.botaoPrimario} />
+            <Text style={[estilos.botaoRecarregarTexto, { color: cores.botaoPrimario }]}>Recarregar</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -164,7 +195,7 @@ export default function AgendaDiaria() {
           }}
         />
       )}
-
+ 
       {/* Tab Bar */}
       <View style={[estilos.tabBar, { backgroundColor: cores.tabBar, borderTopColor: cores.borda }]}>
         <TouchableOpacity style={estilos.tabItem} onPress={() => router.back()}>
@@ -175,15 +206,31 @@ export default function AgendaDiaria() {
           <Ionicons name="calendar" size={22} color={cores.iconeAtivo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeAtivo, fontFamily: 'Poppins_600SemiBold' }]}>Agenda</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={estilos.tabItem} onPress={handleLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={estilos.tabItem} onPress={confirmarLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="log-out-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Sair</Text>
         </TouchableOpacity>
       </View>
+ 
+      <Popup
+        visivel={popup.visivel}
+        tipo={popup.tipo}
+        titulo={popup.titulo}
+        mensagem={popup.mensagem}
+        botoes={
+          popup.tipo === 'confirmacao'
+            ? [
+                { label: 'Cancelar',  onPress: fecharPopup,                    tipo: 'secundario' },
+                { label: 'Confirmar', onPress: popup.onConfirmar ?? fecharPopup, tipo: 'primario' },
+              ]
+            : [{ label: 'OK', onPress: fecharPopup }]
+        }
+        onFechar={fecharPopup}
+      />
     </SafeAreaView>
   );
 }
-
+ 
 const estilos = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1 },
@@ -195,6 +242,8 @@ const estilos = StyleSheet.create({
   centralizado: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   textoCarregando: { fontFamily: 'Poppins_400Regular', fontSize: 14 },
   textoVazio: { fontFamily: 'Poppins_400Regular', fontSize: 15 },
+  botaoRecarregar: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, marginTop: 8 },
+  botaoRecarregarTexto: { fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
   lista: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16 },
   card: { borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1 },
   cardTopo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },

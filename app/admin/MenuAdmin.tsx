@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, SafeAreaView, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar, BarChart3, ClipboardCheck } from 'lucide-react-native';
@@ -9,27 +9,44 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTema } from '../../contexts/ThemeContext';
 import { useAuth } from '../../hooks/useAuth';
-
+import Popup from '../../components/Popup';
+ 
+interface PopupState {
+  visivel: boolean;
+  tipo: 'sucesso' | 'erro' | 'aviso' | 'confirmacao' | 'info';
+  titulo: string;
+  mensagem: string;
+  onConfirmar?: () => void;
+}
+ 
 export default function MenuAdmin() {
   const router = useRouter();
   const { usuario } = useAuth();
   const { tema, alternarTema, cores } = useTema();
-
+ 
+  const [popup, setPopup] = useState<PopupState>({
+    visivel: false, tipo: 'info', titulo: '', mensagem: '',
+  });
+ 
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
   if (!fontsLoaded) return null;
-
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      const confirmar = window.confirm('Deseja realmente sair?');
-      if (confirmar) { localStorage.removeItem('@usuario_data'); router.replace('/login'); }
-    } else {
-      Alert.alert('Sair', 'Deseja realmente sair?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive', onPress: () => { AsyncStorage.removeItem('@usuario_data'); router.replace('/login'); } },
-      ]);
-    }
+ 
+  const fecharPopup = () => setPopup(p => ({ ...p, visivel: false }));
+ 
+  const confirmarLogout = () => {
+    setPopup({
+      visivel: true,
+      tipo: 'confirmacao',
+      titulo: 'Sair da conta',
+      mensagem: 'Deseja realmente sair do painel? Você precisará fazer login novamente.',
+      onConfirmar: async () => {
+        fecharPopup();
+        await AsyncStorage.removeItem('@usuario_data');
+        router.replace('/login');
+      },
+    });
   };
-
+ 
   const opcoes = [
     {
       label: 'Agenda do Dia',
@@ -56,7 +73,7 @@ export default function MenuAdmin() {
       cor: tema === 'escuro' ? '#0C4A6E' : '#E0F2FE',
     },
   ];
-
+ 
   return (
     <SafeAreaView style={[estilos.container, { backgroundColor: cores.fundo }]}>
       {/* Header */}
@@ -70,17 +87,17 @@ export default function MenuAdmin() {
           <TouchableOpacity style={[estilos.botaoIcone, { backgroundColor: cores.borda }]} onPress={alternarTema}>
             <Ionicons name={tema === 'escuro' ? 'sunny-outline' : 'moon-outline'} size={20} color={cores.textoPrimario} />
           </TouchableOpacity>
-          <TouchableOpacity style={[estilos.botaoIcone, { backgroundColor: cores.borda }]} onPress={handleLogout}>
+          <TouchableOpacity style={[estilos.botaoIcone, { backgroundColor: cores.borda }]} onPress={confirmarLogout}>
             <Ionicons name="log-out-outline" size={20} color={cores.textoPrimario} />
           </TouchableOpacity>
         </View>
       </View>
-
+ 
       {/* Conteúdo */}
       <View style={estilos.conteudo}>
         <Text style={[estilos.titulo, { color: cores.textoPrimario }]}>O que deseja fazer?</Text>
         <Text style={[estilos.subtitulo, { color: cores.textoSecundario }]}>Selecione uma opção abaixo</Text>
-
+ 
         <View style={estilos.grade}>
           {opcoes.map((op, i) => (
             <TouchableOpacity
@@ -98,7 +115,7 @@ export default function MenuAdmin() {
           ))}
         </View>
       </View>
-
+ 
       {/* Tab Bar */}
       <View style={[estilos.tabBar, { backgroundColor: cores.tabBar, borderTopColor: cores.borda }]}>
         <TouchableOpacity style={estilos.tabItem} onPress={() => {}}>
@@ -113,15 +130,31 @@ export default function MenuAdmin() {
           <Ionicons name="bar-chart-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Financeiro</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={estilos.tabItem} onPress={handleLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={estilos.tabItem} onPress={confirmarLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="log-out-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Sair</Text>
         </TouchableOpacity>
       </View>
+ 
+      <Popup
+        visivel={popup.visivel}
+        tipo={popup.tipo}
+        titulo={popup.titulo}
+        mensagem={popup.mensagem}
+        botoes={
+          popup.tipo === 'confirmacao'
+            ? [
+                { label: 'Cancelar',  onPress: fecharPopup,                    tipo: 'secundario' },
+                { label: 'Sair',      onPress: popup.onConfirmar ?? fecharPopup, tipo: 'perigo' },
+              ]
+            : [{ label: 'OK', onPress: fecharPopup }]
+        }
+        onFechar={fecharPopup}
+      />
     </SafeAreaView>
   );
 }
-
+ 
 const estilos = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1 },
@@ -134,10 +167,7 @@ const estilos = StyleSheet.create({
   titulo: { fontFamily: 'Poppins_700Bold', fontSize: 22, marginBottom: 4 },
   subtitulo: { fontFamily: 'Poppins_400Regular', fontSize: 13, marginBottom: 24 },
   grade: { gap: 12 },
-  card: {
-    flexDirection: 'row', alignItems: 'center', borderRadius: 14,
-    padding: 16, borderWidth: 1, gap: 14,
-  },
+  card: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 16, borderWidth: 1, gap: 14 },
   cardIcone: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   cardLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 15, flex: 1 },
   tabBar: { flexDirection: 'row', borderTopWidth: 1, paddingBottom: 24, paddingTop: 10, paddingHorizontal: 10 },

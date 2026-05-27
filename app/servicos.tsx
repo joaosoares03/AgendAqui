@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity,
+  FlatList, Modal, StyleSheet, Text, TouchableOpacity,
   View, ActivityIndicator, RefreshControl, Image, SafeAreaView,
 } from 'react-native';
 import { useFonts, Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
@@ -10,13 +10,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useServicos } from '../hooks/useServicos';
 import { useAuth } from '../hooks/useAuth';
 import { useTema } from '../contexts/ThemeContext';
-
+import Popup from '../components/Popup';
+ 
 interface Servico {
   id: number; nome: string; preco: number;
   duracaoMin: number; descricao?: string;
   ativo: boolean; itensInclusos?: string[];
 }
-
+ 
+interface PopupState {
+  visivel: boolean;
+  tipo: 'sucesso' | 'erro' | 'aviso' | 'confirmacao' | 'info';
+  titulo: string;
+  mensagem: string;
+  onConfirmar?: () => void;
+}
+ 
 export default function Servicos() {
   const router = useRouter();
   const { servicos, carregando, erro, recarregar } = useServicos();
@@ -24,27 +33,44 @@ export default function Servicos() {
   const { tema, alternarTema, cores } = useTema();
   const [modalVisivel, setModalVisivel] = useState(false);
   const [servicoSelecionado, setServicoSelecionado] = useState<Servico | null>(null);
-
+ 
+  const [popup, setPopup] = useState<PopupState>({
+    visivel: false, tipo: 'info', titulo: '', mensagem: '',
+  });
+ 
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
-
-  useEffect(() => { if (erro) Alert.alert('Erro', erro); }, [erro]);
+ 
+  useEffect(() => {
+    if (erro) mostrarPopup('erro', 'Erro ao carregar', erro);
+  }, [erro]);
+ 
   if (!fontsLoaded) return null;
-
+ 
+  const fecharPopup = () => setPopup(p => ({ ...p, visivel: false }));
+ 
+  const mostrarPopup = (
+    tipo: PopupState['tipo'],
+    titulo: string,
+    mensagem: string,
+    onConfirmar?: () => void,
+  ) => setPopup({ visivel: true, tipo, titulo, mensagem, onConfirmar });
+ 
   const abrirModal = (servico: Servico) => { setServicoSelecionado(servico); setModalVisivel(true); };
   const fecharModal = () => { setModalVisivel(false); setServicoSelecionado(null); };
-
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      const confirmar = window.confirm('Deseja realmente sair?');
-      if (confirmar) { localStorage.removeItem('@usuario_data'); router.replace('/login'); }
-    } else {
-      Alert.alert('Sair', 'Deseja realmente sair?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive', onPress: () => { AsyncStorage.removeItem('@usuario_data'); router.replace('/login'); } },
-      ]);
-    }
+ 
+  const confirmarLogout = () => {
+    mostrarPopup(
+      'confirmacao',
+      'Sair da conta',
+      'Deseja realmente sair? Você precisará fazer login novamente.',
+      async () => {
+        fecharPopup();
+        await AsyncStorage.removeItem('@usuario_data');
+        router.replace('/login');
+      },
+    );
   };
-
+ 
   const iconeServico = (nome: string) => {
     const n = nome.toLowerCase();
     if (n.includes('premium') || n.includes('star')) return 'star-outline';
@@ -53,7 +79,7 @@ export default function Servicos() {
     if (n.includes('economy')) return 'leaf-outline';
     return 'car-outline';
   };
-
+ 
   if (carregando && servicos.length === 0) {
     return (
       <View style={[estilos.centralizado, { flex: 1, backgroundColor: cores.fundo }]}>
@@ -61,7 +87,7 @@ export default function Servicos() {
       </View>
     );
   }
-
+ 
   return (
     <SafeAreaView style={[estilos.container, { backgroundColor: cores.fundo }]}>
       <View style={[estilos.header, { backgroundColor: cores.fundoHeader, borderBottomColor: cores.borda }]}>
@@ -73,10 +99,10 @@ export default function Servicos() {
           <Ionicons name={tema === 'escuro' ? 'sunny-outline' : 'moon-outline'} size={20} color={cores.textoPrimario} />
         </TouchableOpacity>
       </View>
-
+ 
       <Text style={[estilos.titulo, { color: cores.textoPrimario }]}>Nossos Serviços</Text>
       <Text style={[estilos.subtitulo, { color: cores.textoTerceiro }]}>Escolha o pacote ideal para seu carro</Text>
-
+ 
       <FlatList
         data={servicos.filter(s => s.ativo)}
         keyExtractor={item => item.id.toString()}
@@ -115,7 +141,8 @@ export default function Servicos() {
           </View>
         }
       />
-
+ 
+      {/* Tab Bar */}
       <View style={[estilos.tabBar, { backgroundColor: cores.tabBar, borderTopColor: cores.borda }]}>
         <TouchableOpacity style={estilos.tabItem} onPress={() => router.replace('/menu')}>
           <Ionicons name="home-outline" size={22} color={cores.iconeInativo} />
@@ -129,12 +156,13 @@ export default function Servicos() {
           <Ionicons name="location-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Localização</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={estilos.tabItem} onPress={handleLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={estilos.tabItem} onPress={confirmarLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="log-out-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Sair</Text>
         </TouchableOpacity>
       </View>
-
+ 
+      {/* Modal detalhe serviço */}
       <Modal visible={modalVisivel} transparent animationType="slide" onRequestClose={fecharModal}>
         <View style={estilos.modalFundo}>
           {servicoSelecionado && (
@@ -160,7 +188,15 @@ export default function Servicos() {
               <TouchableOpacity
                 style={[estilos.modalBotaoAgendar, { backgroundColor: cores.botaoPrimario }]}
                 onPress={() => {
-                  router.push({ pathname: '/agendamento', params: { servico: servicoSelecionado.nome, servicoId: servicoSelecionado.id.toString(), preco: servicoSelecionado.preco.toString(), duracao: servicoSelecionado.duracaoMin.toString() } });
+                  router.push({
+                    pathname: '/agendamento',
+                    params: {
+                      servico: servicoSelecionado.nome,
+                      servicoId: servicoSelecionado.id.toString(),
+                      preco: servicoSelecionado.preco.toString(),
+                      duracao: servicoSelecionado.duracaoMin.toString(),
+                    },
+                  });
                   fecharModal();
                 }}
               >
@@ -173,10 +209,26 @@ export default function Servicos() {
           )}
         </View>
       </Modal>
+ 
+      <Popup
+        visivel={popup.visivel}
+        tipo={popup.tipo}
+        titulo={popup.titulo}
+        mensagem={popup.mensagem}
+        botoes={
+          popup.tipo === 'confirmacao'
+            ? [
+                { label: 'Cancelar',  onPress: fecharPopup,                    tipo: 'secundario' },
+                { label: 'Confirmar', onPress: popup.onConfirmar ?? fecharPopup, tipo: 'primario' },
+              ]
+            : [{ label: 'OK', onPress: fecharPopup }]
+        }
+        onFechar={fecharPopup}
+      />
     </SafeAreaView>
   );
 }
-
+ 
 const estilos = StyleSheet.create({
   container: { flex: 1 },
   centralizado: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },

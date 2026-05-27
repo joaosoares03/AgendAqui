@@ -1,19 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Alert,
-  ActivityIndicator, FlatList, SafeAreaView, Image,
-  TextInput, Modal, ScrollView, useWindowDimensions,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { api, Agendamento } from '../../services/api';
-import {
-  useFonts, Poppins_400Regular, Poppins_500Medium,
-  Poppins_600SemiBold, Poppins_700Bold,
+    Poppins_400Regular, Poppins_500Medium,
+    Poppins_600SemiBold, Poppins_700Bold,
+    useFonts,
 } from '@expo-google-fonts/poppins';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator, FlatList,
+    Image,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View
+} from 'react-native';
+import Popup from '../../components/Popup.tsx';
 import { useTema } from '../../contexts/ThemeContext';
-import Popup from '../../components/Popup';
+import { Agendamento, api } from '../../services/api';
 
 type FiltroTempo  = 'todos' | 'hoje' | 'semana' | 'mes' | 'ano' | 'passados' | 'futuros';
 type FiltroStatus = 'todos' | 'agendado' | 'confirmado' | 'concluido' | 'cancelado';

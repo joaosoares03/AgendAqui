@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, SafeAreaView, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'lucide-react-native';
@@ -9,27 +9,44 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTema } from '../../contexts/ThemeContext';
 import { useAuth } from '../../hooks/useAuth';
-
+import Popup from '../../components/Popup';
+ 
+interface PopupState {
+  visivel: boolean;
+  tipo: 'sucesso' | 'erro' | 'aviso' | 'confirmacao' | 'info';
+  titulo: string;
+  mensagem: string;
+  onConfirmar?: () => void;
+}
+ 
 export default function MenuFuncionario() {
   const router = useRouter();
   const { usuario } = useAuth();
   const { tema, alternarTema, cores } = useTema();
-
+ 
+  const [popup, setPopup] = useState<PopupState>({
+    visivel: false, tipo: 'info', titulo: '', mensagem: '',
+  });
+ 
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
   if (!fontsLoaded) return null;
-
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      const confirmar = window.confirm('Deseja realmente sair?');
-      if (confirmar) { localStorage.removeItem('@usuario_data'); router.replace('/login'); }
-    } else {
-      Alert.alert('Sair', 'Deseja realmente sair?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive', onPress: () => { AsyncStorage.removeItem('@usuario_data'); router.replace('/login'); } },
-      ]);
-    }
+ 
+  const fecharPopup = () => setPopup(p => ({ ...p, visivel: false }));
+ 
+  const confirmarLogout = () => {
+    setPopup({
+      visivel: true,
+      tipo: 'confirmacao',
+      titulo: 'Sair da conta',
+      mensagem: 'Deseja realmente sair? Você precisará fazer login novamente.',
+      onConfirmar: async () => {
+        fecharPopup();
+        await AsyncStorage.removeItem('@usuario_data');
+        router.replace('/login');
+      },
+    });
   };
-
+ 
   return (
     <SafeAreaView style={[estilos.container, { backgroundColor: cores.fundo }]}>
       {/* Header */}
@@ -43,16 +60,16 @@ export default function MenuFuncionario() {
           <TouchableOpacity style={[estilos.botaoIcone, { backgroundColor: cores.borda }]} onPress={alternarTema}>
             <Ionicons name={tema === 'escuro' ? 'sunny-outline' : 'moon-outline'} size={20} color={cores.textoPrimario} />
           </TouchableOpacity>
-          <TouchableOpacity style={[estilos.botaoIcone, { backgroundColor: cores.borda }]} onPress={handleLogout}>
+          <TouchableOpacity style={[estilos.botaoIcone, { backgroundColor: cores.borda }]} onPress={confirmarLogout}>
             <Ionicons name="log-out-outline" size={20} color={cores.textoPrimario} />
           </TouchableOpacity>
         </View>
       </View>
-
+ 
       <View style={estilos.conteudo}>
         <Text style={[estilos.titulo, { color: cores.textoPrimario }]}>Olá, {usuario?.nome?.split(' ')[0]}!</Text>
         <Text style={[estilos.subtitulo, { color: cores.textoSecundario }]}>Selecione uma opção abaixo</Text>
-
+ 
         <TouchableOpacity
           style={[estilos.card, { backgroundColor: cores.fundoCard, borderColor: cores.borda }]}
           onPress={() => router.push('/admin/AgendaDiaria')}
@@ -65,7 +82,7 @@ export default function MenuFuncionario() {
           <Ionicons name="chevron-forward" size={16} color={cores.textoSecundario} />
         </TouchableOpacity>
       </View>
-
+ 
       {/* Tab Bar */}
       <View style={[estilos.tabBar, { backgroundColor: cores.tabBar, borderTopColor: cores.borda }]}>
         <TouchableOpacity style={estilos.tabItem} onPress={() => {}}>
@@ -76,15 +93,31 @@ export default function MenuFuncionario() {
           <Ionicons name="calendar-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Agenda</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={estilos.tabItem} onPress={handleLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={estilos.tabItem} onPress={confirmarLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="log-out-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Sair</Text>
         </TouchableOpacity>
       </View>
+ 
+      <Popup
+        visivel={popup.visivel}
+        tipo={popup.tipo}
+        titulo={popup.titulo}
+        mensagem={popup.mensagem}
+        botoes={
+          popup.tipo === 'confirmacao'
+            ? [
+                { label: 'Cancelar', onPress: fecharPopup,                    tipo: 'secundario' },
+                { label: 'Sair',     onPress: popup.onConfirmar ?? fecharPopup, tipo: 'perigo' },
+              ]
+            : [{ label: 'OK', onPress: fecharPopup }]
+        }
+        onFechar={fecharPopup}
+      />
     </SafeAreaView>
   );
 }
-
+ 
 const estilos = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1 },

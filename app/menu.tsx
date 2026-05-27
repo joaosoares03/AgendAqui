@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert, StyleSheet, Text, TouchableOpacity, View,
+  StyleSheet, Text, TouchableOpacity, View,
   ActivityIndicator, ScrollView, Image, SafeAreaView,
 } from 'react-native';
 import {
@@ -12,61 +12,83 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAgendamentos } from '../hooks/useAgendamentos';
 import { useAuth } from '../hooks/useAuth';
 import { useTema } from '../contexts/ThemeContext';
-
+import Popup from '../components/Popup';
+ 
+interface PopupState {
+  visivel: boolean;
+  tipo: 'sucesso' | 'erro' | 'aviso' | 'confirmacao' | 'info';
+  titulo: string;
+  mensagem: string;
+  onConfirmar?: () => void;
+}
+ 
 export default function Menu() {
   const router = useRouter();
   const { agendamentos, carregando, erro, cancelarAgendamento } = useAgendamentos();
   const { usuario, carregando: authCarregando } = useAuth();
   const { tema, alternarTema, cores } = useTema();
   const [cancelandoIds, setCancelandoIds] = useState<number[]>([]);
-
+ 
+  const [popup, setPopup] = useState<PopupState>({
+    visivel: false, tipo: 'info', titulo: '', mensagem: '',
+  });
+ 
   const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold });
   if (!fontsLoaded) return null;
-
-  const handleCancelarAgendamento = async (agendamentoId: number) => {
-    setCancelandoIds(prev => [...prev, agendamentoId]);
-    try {
-      await cancelarAgendamento(agendamentoId);
-    } catch (error) {
-      console.error('Erro ao cancelar:', error);
-    } finally {
-      setCancelandoIds(prev => prev.filter(id => id !== agendamentoId));
-    }
+ 
+  const fecharPopup = () => setPopup(p => ({ ...p, visivel: false }));
+ 
+  const mostrarPopup = (
+    tipo: PopupState['tipo'],
+    titulo: string,
+    mensagem: string,
+    onConfirmar?: () => void,
+  ) => setPopup({ visivel: true, tipo, titulo, mensagem, onConfirmar });
+ 
+  const handleCancelarAgendamento = (agendamentoId: number) => {
+    mostrarPopup(
+      'confirmacao',
+      'Cancelar Agendamento',
+      'Tem certeza que deseja cancelar este agendamento? Esta ação não pode ser desfeita.',
+      async () => {
+        fecharPopup();
+        setCancelandoIds(prev => [...prev, agendamentoId]);
+        try {
+          await cancelarAgendamento(agendamentoId);
+          mostrarPopup('sucesso', 'Agendamento Cancelado', 'Seu agendamento foi cancelado com sucesso.');
+        } catch {
+          mostrarPopup('erro', 'Erro', 'Não foi possível cancelar o agendamento. Tente novamente.');
+        } finally {
+          setCancelandoIds(prev => prev.filter(id => id !== agendamentoId));
+        }
+      },
+    );
   };
-
+ 
   const formatarData = (dataString: string) => {
     const data = new Date(dataString + 'T12:00:00');
     return data.toLocaleDateString('pt-BR');
   };
-
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      const confirmar = window.confirm('Deseja realmente sair?');
-      if (confirmar) {
-        localStorage.removeItem('@usuario_data');
+ 
+  const confirmarLogout = () => {
+    mostrarPopup(
+      'confirmacao',
+      'Sair da conta',
+      'Deseja realmente sair? Você precisará fazer login novamente.',
+      async () => {
+        fecharPopup();
+        await AsyncStorage.removeItem('@usuario_data');
         router.replace('/login');
-      }
-    } else {
-      Alert.alert('Sair', 'Deseja realmente sair?', [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sair',
-          style: 'destructive',
-          onPress: () => {
-            AsyncStorage.removeItem('@usuario_data');
-            router.replace('/login');
-          },
-        },
-      ]);
-    }
+      },
+    );
   };
-
+ 
   const statusConfig: Record<string, { label: string; cor: string; bg: string }> = {
     agendado:  { label: 'Agendado',  cor: '#166534', bg: '#DCFCE7' },
     concluido: { label: 'Concluído', cor: '#1E40AF', bg: '#DBEAFE' },
     cancelado: { label: 'Cancelado', cor: '#991B1B', bg: '#FEE2E2' },
   };
-
+ 
   if (authCarregando) {
     return (
       <View style={[estilos.centralizado, { flex: 1, backgroundColor: cores.fundo }]}>
@@ -74,21 +96,18 @@ export default function Menu() {
       </View>
     );
   }
-
+ 
   if (!usuario) {
     return (
       <View style={[estilos.centralizado, { flex: 1, backgroundColor: cores.fundo }]}>
         <Text style={{ color: cores.textoPrimario, fontFamily: 'Poppins_400Regular' }}>Usuário não logado</Text>
-        <TouchableOpacity
-          style={[estilos.botaoPrimario, { backgroundColor: cores.botaoPrimario, marginTop: 16 }]}
-          onPress={() => router.replace('/login')}
-        >
+        <TouchableOpacity style={[estilos.botaoPrimario, { backgroundColor: cores.botaoPrimario, marginTop: 16 }]} onPress={() => router.replace('/login')}>
           <Text style={estilos.textoBotaoPrimario}>Fazer Login</Text>
         </TouchableOpacity>
       </View>
     );
   }
-
+ 
   return (
     <SafeAreaView style={[estilos.fundo, { backgroundColor: cores.fundo }]}>
       {/* Header */}
@@ -99,27 +118,15 @@ export default function Menu() {
           <Text style={[estilos.headerNome, { color: cores.textoPrimario }]}>{usuario.nome.split(' ')[0]}</Text>
         </View>
         <View style={estilos.headerAcoes}>
-          {/* Botão tema */}
-          <TouchableOpacity
-            style={[estilos.botaoIconeHeader, { backgroundColor: cores.borda }]}
-            onPress={alternarTema}
-          >
-            <Ionicons
-              name={tema === 'escuro' ? 'sunny-outline' : 'moon-outline'}
-              size={20}
-              color={cores.textoPrimario}
-            />
+          <TouchableOpacity style={[estilos.botaoIconeHeader, { backgroundColor: cores.borda }]} onPress={alternarTema}>
+            <Ionicons name={tema === 'escuro' ? 'sunny-outline' : 'moon-outline'} size={20} color={cores.textoPrimario} />
           </TouchableOpacity>
-          {/* Botão sair */}
-          <TouchableOpacity
-            style={[estilos.botaoIconeHeader, { backgroundColor: cores.borda }]}
-            onPress={handleLogout}
-          >
+          <TouchableOpacity style={[estilos.botaoIconeHeader, { backgroundColor: cores.borda }]} onPress={confirmarLogout}>
             <Ionicons name="log-out-outline" size={20} color={cores.textoPrimario} />
           </TouchableOpacity>
         </View>
       </View>
-
+ 
       <ScrollView contentContainerStyle={estilos.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={[estilos.secaoTitulo, { color: cores.textoPrimario }]}>Ações Rápidas</Text>
         <View style={estilos.acoesFila}>
@@ -132,7 +139,7 @@ export default function Menu() {
             </View>
             <Text style={[estilos.acaoLabel, { color: cores.textoPrimario }]}>Agendar</Text>
           </TouchableOpacity>
-
+ 
           <TouchableOpacity
             style={[estilos.acaoCard, { backgroundColor: cores.fundoCard, borderColor: cores.borda }]}
             onPress={() => router.push('/comochegar')}
@@ -143,9 +150,9 @@ export default function Menu() {
             <Text style={[estilos.acaoLabel, { color: cores.textoPrimario }]}>Como Chegar</Text>
           </TouchableOpacity>
         </View>
-
+ 
         <Text style={[estilos.secaoTitulo, { color: cores.textoPrimario }]}>Meus Agendamentos</Text>
-
+ 
         {carregando ? (
           <ActivityIndicator size="large" color={cores.botaoPrimario} style={{ marginTop: 30 }} />
         ) : erro ? (
@@ -154,10 +161,7 @@ export default function Menu() {
           <View style={estilos.vazioContainer}>
             <Ionicons name="calendar-outline" size={48} color={cores.textoTerceiro} />
             <Text style={[estilos.textoVazio, { color: cores.textoTerceiro }]}>Nenhum agendamento ainda</Text>
-            <TouchableOpacity
-              style={[estilos.botaoPrimario, { backgroundColor: cores.botaoPrimario }]}
-              onPress={() => router.push('/servicos')}
-            >
+            <TouchableOpacity style={[estilos.botaoPrimario, { backgroundColor: cores.botaoPrimario }]} onPress={() => router.push('/servicos')}>
               <Text style={estilos.textoBotaoPrimario}>Agendar agora</Text>
             </TouchableOpacity>
           </View>
@@ -209,7 +213,7 @@ export default function Menu() {
         )}
         <View style={{ height: 100 }} />
       </ScrollView>
-
+ 
       {/* Tab Bar */}
       <View style={[estilos.tabBar, { backgroundColor: cores.tabBar, borderTopColor: cores.borda }]}>
         <TouchableOpacity style={estilos.tabItem} onPress={() => {}}>
@@ -224,26 +228,35 @@ export default function Menu() {
           <Ionicons name="location-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Localização</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={estilos.tabItem} onPress={handleLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={estilos.tabItem} onPress={confirmarLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="log-out-outline" size={22} color={cores.iconeInativo} />
           <Text style={[estilos.tabLabel, { color: cores.iconeInativo }]}>Sair</Text>
         </TouchableOpacity>
       </View>
+ 
+      <Popup
+        visivel={popup.visivel}
+        tipo={popup.tipo}
+        titulo={popup.titulo}
+        mensagem={popup.mensagem}
+        botoes={
+          popup.tipo === 'confirmacao'
+            ? [
+                { label: 'Cancelar',  onPress: fecharPopup,                    tipo: 'secundario' },
+                { label: 'Confirmar', onPress: popup.onConfirmar ?? fecharPopup, tipo: popup.titulo.includes('cancelar') || popup.titulo.includes('Cancelar') ? 'perigo' : 'primario' },
+              ]
+            : [{ label: 'OK', onPress: fecharPopup }]
+        }
+        onFechar={fecharPopup}
+      />
     </SafeAreaView>
   );
 }
-
+ 
 const estilos = StyleSheet.create({
   fundo: { flex: 1 },
   centralizado: { justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1 },
   logo: { width: 40, height: 40, marginRight: 10 },
   headerSaudacao: { fontFamily: 'Poppins_400Regular', fontSize: 12 },
   headerNome: { fontFamily: 'Poppins_700Bold', fontSize: 16 },
@@ -252,10 +265,7 @@ const estilos = StyleSheet.create({
   scrollContent: { paddingHorizontal: 20, paddingTop: 24 },
   secaoTitulo: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, marginBottom: 12 },
   acoesFila: { flexDirection: 'row', gap: 12, marginBottom: 28 },
-  acaoCard: {
-    flex: 1, borderRadius: 14, padding: 16,
-    alignItems: 'center', borderWidth: 1,
-  },
+  acaoCard: { flex: 1, borderRadius: 14, padding: 16, alignItems: 'center', borderWidth: 1 },
   acaoIcone: { width: 48, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   acaoLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 13 },
   card: { borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1 },
